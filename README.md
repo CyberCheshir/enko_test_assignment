@@ -22,3 +22,22 @@
     - Написать view, который:
     - Подключается к $PostgreSQL$
     - Денормализует данные из 3НФ к виду, аналогичному <code>"test_dataset.csv"</code>
+
+---
+
+## 🚀 Быстрый запуск платформы
+
+Запустите сервисы:
+```bash
+docker compose up -d
+```
+
+### Сервисы платформы:
+| Сервис | Адрес |
+|---|---|
+| **Airflow UI** | [http://localhost:8080](http://localhost:8080) |
+| **RustFS S3 Console** | [http://localhost:9001](http://localhost:9001) |
+| **ClickHouse Web Play** | [http://localhost:18123/play](http://localhost:18123/play) |
+| **PostgreSQL** | `localhost:5432` (db: `airflow`) |
+
+---
