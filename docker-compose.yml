@@ -45,7 +45,7 @@ services:
     ports:
       - "127.0.0.1:5432:5432"
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U airflow -d airflow" ]
+      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -64,7 +64,7 @@ services:
       RUSTFS_CONSOLE_ENABLE: "true"
       RUSTFS_OBS_LOGGER_LEVEL: info
       RUSTFS_OBS_LOG_DIRECTORY: /app/logs
-    command: [ "/data" ]
+    command: ["/data"]
     volumes:
       - rustfs_data:/data
       - rustfs_logs:/app/logs
@@ -73,7 +73,7 @@ services:
       - "127.0.0.1:9001:9001"
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD-SHELL", "curl -fsS http://127.0.0.1:9000/health" ]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9000/health"]
       interval: 15s
       timeout: 5s
       retries: 10
@@ -159,10 +159,10 @@ services:
   clickhouse:
     image: clickhouse/clickhouse-server:24.3
     container_name: data-platform-clickhouse
-    command: [ "--", "--listen_host=0.0.0.0" ]
+    command: ["--", "--listen_host=0.0.0.0"]
     ports:
-      - "127.0.0.1:18123:8123" # HTTP interface / Web Play
-      - "127.0.0.1:19000:9000" # Native TCP client
+      - "127.0.0.1:18123:8123"   # HTTP interface / Web Play
+      - "127.0.0.1:19000:9000"   # Native TCP client
     environment:
       CLICKHOUSE_DB: default
       CLICKHOUSE_USER: default
@@ -175,7 +175,7 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: [ "CMD-SHELL", "clickhouse-client --query 'SELECT 1'" ]
+      test: ["CMD-SHELL", "clickhouse-client --query 'SELECT 1'"]
       interval: 10s
       timeout: 5s
       retries: 5

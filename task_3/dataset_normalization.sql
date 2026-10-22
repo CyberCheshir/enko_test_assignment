@@ -1,7 +1,3 @@
--- =============================================================================
--- Задание 3. Нормализация данных raw.test_dataset в 3НФ
--- =============================================================================
--- Единый скрипт:
 --   1. Создает схему normalization и таблицы 3НФ с первичными и внешними ключами.
 --   2. Раскладывает данные из raw.test_dataset по сущностям и справочникам.
 -- =============================================================================
@@ -9,13 +5,13 @@
 BEGIN;
 
 -- -----------------------------------------------------------------------------
--- ЧАСТЬ 1. DDL: Создание схемы и таблиц 3НФ
+--  Создание схемы и таблиц 3НФ
 -- -----------------------------------------------------------------------------
 
 DROP SCHEMA IF EXISTS normalization CASCADE;
 CREATE SCHEMA normalization;
 
--- 1.1. Справочники
+-- Справочники
 CREATE TABLE normalization.wall_type (
     wall_type_id   SMALLINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     name           TEXT NOT NULL,
@@ -40,7 +36,7 @@ CREATE TABLE normalization.data_source (
     CONSTRAINT data_source_name_uniq UNIQUE (name)
 );
 
--- 1.2. Сущность: Жилой комплекс
+-- Сущность: Жилой комплекс
 CREATE TABLE normalization.complex (
     complex_id     INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     name           TEXT NOT NULL,
@@ -51,35 +47,64 @@ CREATE TABLE normalization.complex (
     CONSTRAINT complex_natural_key UNIQUE (name, developer_id, city_id)
 );
 
--- 1.3. Сущность: Объект недвижимости
+-- Сущность: Объект недвижимости
 CREATE TABLE normalization.object (
     object_id      BIGINT  NOT NULL PRIMARY KEY,
     complex_id     INTEGER NOT NULL REFERENCES normalization.complex (complex_id)
 );
 
--- 1.4. Факт: Предложение (Листинг)
+-- Факт: Предложение (Листинг)
 CREATE TABLE normalization.listing (
-    uuid           UUID             NOT NULL PRIMARY KEY,
-    object_id      BIGINT           REFERENCES normalization.object (object_id),
-    wall_type_id   SMALLINT         NOT NULL REFERENCES normalization.wall_type (wall_type_id),
-    data_source_id SMALLINT         NOT NULL REFERENCES normalization.data_source (data_source_id),
+    uuid           UUID             NOT NULL,
+    object_id      BIGINT,
+    city_id        SMALLINT         NOT NULL,
+    wall_type_id   SMALLINT         NOT NULL,
+    data_source_id SMALLINT         NOT NULL,
     price          NUMERIC(15, 2)   NOT NULL,
     square         NUMERIC(10, 2)   NOT NULL,
-    load_date      TIMESTAMP        NOT NULL
+    load_date      TIMESTAMP        NOT NULL,
+
+    -- Первичный ключ
+    CONSTRAINT pk_listing
+        PRIMARY KEY (uuid),
+
+    -- Взаимосвязи (Внешние ключи)
+    CONSTRAINT fk_listing_object
+        FOREIGN KEY (object_id)
+        REFERENCES normalization.object (object_id)
+        ON DELETE SET NULL,
+
+    CONSTRAINT fk_listing_city
+        FOREIGN KEY (city_id)
+        REFERENCES normalization.city (city_id)
+        ON DELETE RESTRICT,
+
+    CONSTRAINT fk_listing_wall_type
+        FOREIGN KEY (wall_type_id)
+        REFERENCES normalization.wall_type (wall_type_id)
+        ON DELETE RESTRICT,
+
+    CONSTRAINT fk_listing_data_source
+        FOREIGN KEY (data_source_id)
+        REFERENCES normalization.data_source (data_source_id)
+        ON DELETE RESTRICT,
+
+    -- Проверки данных
+    CONSTRAINT chk_listing_price_positive
+        CHECK (price > 0),
+    CONSTRAINT chk_listing_square_positive
+        CHECK (square > 0)
 );
 
 -- Индексы для внешних ключей и частых фильтров
 CREATE INDEX listing_object_id_idx      ON normalization.listing (object_id);
+CREATE INDEX listing_city_id_idx        ON normalization.listing (city_id);
 CREATE INDEX listing_wall_type_id_idx   ON normalization.listing (wall_type_id);
 CREATE INDEX listing_data_source_id_idx ON normalization.listing (data_source_id);
 CREATE INDEX listing_load_date_idx      ON normalization.listing (load_date);
 
 
--- -----------------------------------------------------------------------------
--- ЧАСТЬ 2. DML: Заполнение таблиц из raw.test_dataset
--- -----------------------------------------------------------------------------
-
--- 2.1. Подготовка уникальных ЖК с сохранением координат
+-- Подготовка уникальных ЖК с сохранением координат
 CREATE TEMP TABLE _complex_coords ON COMMIT DROP AS
 SELECT DISTINCT ON (COALESCE(NULLIF(btrim(complex_name), ''), 'не указан'),
                     COALESCE(NULLIF(btrim(developer_name), ''), 'не указан'),
@@ -94,7 +119,7 @@ ORDER BY 1, 2, 3, 4, 5;
 
 CREATE INDEX ON _complex_coords (complex_name, developer_name, city);
 
--- 2.2. Наполнение справочников
+-- Наполнение справочников
 -- Типы стен
 INSERT INTO normalization.wall_type (wall_type_id, name)
 OVERRIDING SYSTEM VALUE
@@ -139,7 +164,7 @@ FROM raw.test_dataset
 WHERE data_source IS NOT NULL AND btrim(data_source) <> ''
 ORDER BY 1;
 
--- 2.3. Наполнение ЖК
+-- Наполнение ЖК
 INSERT INTO normalization.complex (name, developer_id, city_id, lat, lon)
 SELECT
     cc.complex_name,
@@ -151,7 +176,7 @@ FROM _complex_coords cc
 JOIN normalization.developer d ON d.name = cc.developer_name
 JOIN normalization.city c      ON c.code = cc.city;
 
--- 2.4. Наполнение объектов недвижимости
+-- Наполнение объектов недвижимости
 CREATE TEMP TABLE _complex_id_map ON COMMIT DROP AS
 SELECT cc.complex_name, cc.developer_name, cc.city, cx.complex_id
 FROM _complex_coords cc
@@ -174,10 +199,11 @@ JOIN _complex_id_map m
  AND m.city           = COALESCE(NULLIF(btrim(r.city), ''), 'не указан')
 WHERE r.object_id IS NOT NULL;
 
--- 2.5. Наполнение фактов (Листинги)
+-- Наполнение фактов (Листинги)
 INSERT INTO normalization.listing (
     uuid,
     object_id,
+    city_id,
     wall_type_id,
     data_source_id,
     price,
@@ -187,12 +213,15 @@ INSERT INTO normalization.listing (
 SELECT
     r.uuid::UUID,
     r.object_id,
+    c.city_id,
     wt.wall_type_id,
     ds.data_source_id,
     r.price,
     r.square,
     r.load_date
 FROM raw.test_dataset r
+JOIN normalization.city c
+  ON c.code = COALESCE(NULLIF(btrim(r.city), ''), 'не указан')
 JOIN normalization.wall_type wt
   ON wt.name = COALESCE(NULLIF(btrim(r.wall_type), ''), 'не указан')
 JOIN normalization.data_source ds
