@@ -22,8 +22,7 @@ CSV_DELIMITER = "|"
 SCHEMA = "raw"
 TABLE = "test_dataset"
 
-# In preprocessed.csv, coordinates lat and lon are cleaned and stored with a decimal point,
-# so they are loaded directly as floating point numbers (DOUBLE PRECISION).
+
 COLUMNS = [
     ("uuid", "TEXT NOT NULL"),
     ("object_id", "BIGINT"),
@@ -63,9 +62,11 @@ COPY_SQL = (
     tags=["test-task", "s3", "postgres"],
 )
 def s3_to_postgres_pipeline():
+    """ELT загрузки исходного датасета из S3 (RustFS) в PostgreSQL"""
 
     @task
     def ensure_target_table() -> None:
+        """Создание таблицы """
         hook = PostgresHook(postgres_conn_id=PG_CONN_ID)
         with hook.get_conn() as conn, conn.cursor() as cur:
             cur.execute(CREATE_TABLE_SQL)
@@ -73,7 +74,7 @@ def s3_to_postgres_pipeline():
 
     @task
     def extract_from_s3() -> str:
-        """Download object to a unique temporary file path and return the path."""
+        """Скачивает CSV-файл из S3-хранилища (RustFS) на локальный диск"""
         fd, local_path = tempfile.mkstemp(prefix="dataset_", suffix=".csv")
         os.close(fd)
 
@@ -88,9 +89,9 @@ def s3_to_postgres_pipeline():
 
     @task
     def load_to_postgres(file_path: str) -> str:
+        """Загружает данные из локального CSV-файла в таблицу PostgreSQL"""
         hook = PostgresHook(postgres_conn_id=PG_CONN_ID)
         with hook.get_conn() as conn, conn.cursor() as cur:
-            # idempotency: a re-run replaces the previous load instead of duplicating it
             cur.execute(f"TRUNCATE TABLE {SCHEMA}.{TABLE}")
             with open(file_path, encoding="utf-8") as csv_file:
                 cur.copy_expert(COPY_SQL, csv_file)
@@ -99,9 +100,8 @@ def s3_to_postgres_pipeline():
 
     @task
     def validate_and_cleanup(file_path: str) -> None:
+        """Проверка целостности загруженных данных и очистка временные файлы"""
         try:
-            # The file has quoted values containing line breaks, so the number of
-            # CSV records is counted with the csv module instead of counting lines.
             with open(file_path, newline="", encoding="utf-8") as f:
                 reader = csv.reader(f, delimiter=CSV_DELIMITER)
                 next(reader, None)  # header
